@@ -139,11 +139,17 @@ function parseEvent(event) {
 
   // ── Flighty events ──
   // Title format: "✈ JFK→SFO · AA 177" or "✈️ DCA→LAX · AA 123"
-  // The ✈ can be various plane emoji; key pattern is the airport codes with →
-  const flightyMatch = title.match(/([A-Z]{3})\s*→\s*([A-Z]{3})/);
-  const hasFlightyDesc = description.includes("Flight time") || description.includes("Booking Code");
+  // The arrow can be → (U+2192), ➔, ➝, >, ->, or other variants
+  // Match any 3-letter airport code pair separated by arrow-like characters
+  const flightyMatch = title.match(/([A-Z]{3})\s*[\u2192\u2794\u279D\u27A1→➔➝>]+\s*([A-Z]{3})/);
 
-  if (flightyMatch && hasFlightyDesc) {
+  // Detect Flighty events by: has airport codes in title + either has description keywords
+  // OR location contains "Intl" / "Airport" / "National" (Flighty puts departure airport in location)
+  const hasFlightyDesc = description.includes("Flight time") || description.includes("Booking Code");
+  const hasAirportLocation = /intl|airport|national|terminal/i.test(location);
+  const isFlighty = flightyMatch && (hasFlightyDesc || hasAirportLocation);
+
+  if (isFlighty) {
     const originCode = flightyMatch[1];
     const destCode = flightyMatch[2];
 
@@ -203,7 +209,7 @@ function parseEvent(event) {
 
   // "ABC → DEF" airport codes (non-Flighty, no description)
   if (!city) {
-    const codeMatch = title.match(/([A-Z]{3})\s*[→\->–]\s*([A-Z]{3})/);
+    const codeMatch = title.match(/([A-Z]{3})\s*[\u2192\u2794\u279D\u27A1→➔➝\-\->–]+\s*([A-Z]{3})/);
     if (codeMatch) {
       city = AIRPORT_CITIES[codeMatch[2]] || codeMatch[2];
       originCity = AIRPORT_CITIES[codeMatch[1]] || codeMatch[1];
@@ -543,6 +549,18 @@ async function handler(req, res) {
 
     const events = response.data.items || [];
     const homeCity = process.env.HOME_CITY || "Arlington";
+
+    // Debug mode: /api/trips?debug=1 shows raw events
+    if (req.query && req.query.debug === "1") {
+      const raw = events.map(e => ({
+        summary: e.summary,
+        location: e.location,
+        description: e.description ? e.description.substring(0, 200) : null,
+        start: e.start,
+        end: e.end,
+      }));
+      return res.status(200).json({ ok: true, debug: true, event_count: events.length, events: raw });
+    }
 
     // Parse all events into legs, then merge into trips
     const legs = events.map(parseEvent).filter(Boolean);
