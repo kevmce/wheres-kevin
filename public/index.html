@@ -99,13 +99,44 @@
     .card__map {
       position: relative;
       width: 100%;
+      height: 220px;
       border-radius: 12px 12px 0 0;
       overflow: hidden;
     }
-    .card__map canvas {
+    .card__map iframe {
       width: 100%;
-      height: auto;
-      display: block;
+      height: 100%;
+      border: 0;
+      filter: invert(1) hue-rotate(180deg) saturate(0.3) brightness(0.6) contrast(1.2);
+      pointer-events: none;
+    }
+    .card__map-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(26,31,46,0.3) 0%, rgba(26,31,46,0.6) 100%);
+      pointer-events: none;
+    }
+    .card__map-pin {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #E87952;
+      border: 2px solid #fff;
+      box-shadow: 0 0 16px rgba(232,121,82,0.5), 0 0 32px rgba(232,121,82,0.25);
+      pointer-events: none;
+    }
+    .card__map-pin::after {
+      content: '';
+      position: absolute;
+      top: -8px; left: -8px;
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(232,121,82,0.3);
+      animation: pulse 2s ease-in-out infinite;
     }
     .card__map-label {
       position: absolute;
@@ -184,7 +215,7 @@
     .upcoming-label {
       font-size: 11px;
       font-family: var(--mono);
-      color: rgba(255,255,255,0.3);
+      color: rgba(255,255,255,0.45);
       letter-spacing: 0.12em;
       text-transform: uppercase;
       margin-bottom: 12px;
@@ -193,8 +224,8 @@
     .upcoming-list { display: flex; flex-direction: column; gap: 8px; }
 
     .trip-row {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,255,255,0.05);
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
       border-radius: 12px;
       padding: 14px 18px;
       display: flex;
@@ -210,15 +241,15 @@
       align-items: center;
       justify-content: center;
     }
-    .trip-row__icon--flight { background: rgba(232,121,82,0.12); color: var(--accent); }
-    .trip-row__icon--train { background: rgba(96,165,250,0.12); color: var(--blue); }
-    .trip-row__icon--drive { background: rgba(74,222,128,0.12); color: var(--green); }
+    .trip-row__icon--flight { background: rgba(232,121,82,0.15); color: var(--accent); }
+    .trip-row__icon--train { background: rgba(96,165,250,0.15); color: var(--blue); }
+    .trip-row__icon--drive { background: rgba(74,222,128,0.15); color: var(--green); }
     .trip-row__city { font-size: 15px; font-weight: 500; color: #fff; }
-    .trip-row__dates { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+    .trip-row__dates { font-size: 12px; color: rgba(255,255,255,0.55); margin-top: 2px; }
     .trip-row__countdown {
       font-size: 11px;
       font-family: var(--mono);
-      color: rgba(255,255,255,0.3);
+      color: rgba(255,255,255,0.45);
       white-space: nowrap;
     }
 
@@ -226,7 +257,7 @@
     .footer {
       margin-top: 36px;
       padding: 16px 0;
-      border-top: 1px solid rgba(255,255,255,0.05);
+      border-top: 1px solid rgba(255,255,255,0.08);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -234,9 +265,9 @@
     .footer__text {
       font-size: 11px;
       font-family: var(--mono);
-      color: var(--text-faint);
+      color: rgba(255,255,255,0.3);
     }
-    .footer__time { color: rgba(255,255,255,0.15); }
+    .footer__time { color: rgba(255,255,255,0.25); }
 
     /* ── Loading skeleton ── */
     .skeleton {
@@ -334,51 +365,19 @@
       return { type: "home" };
     }
 
-    // ── Map Drawing ──
-    function drawMap(canvas, lat, lng, city) {
-      const ctx = canvas.getContext("2d");
-      const w = canvas.width, h = canvas.height;
-
-      ctx.fillStyle = "#1a1f2e";
-      ctx.fillRect(0, 0, w, h);
-
-      // Grid
-      ctx.strokeStyle = "rgba(255,255,255,0.03)";
-      ctx.lineWidth = 1;
-      for (let i = 0; i < w; i += 30) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,h); ctx.stroke(); }
-      for (let i = 0; i < h; i += 30) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(w,i); ctx.stroke(); }
-
-      // Concentric circles
-      ctx.strokeStyle = "rgba(255,255,255,0.05)";
-      for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(w/2, h/2, 40+i*35, 0, Math.PI*2); ctx.stroke(); }
-
-      const cx = w/2, cy = h/2;
-
-      // Glow
-      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 60);
-      glow.addColorStop(0, "rgba(232,121,82,0.25)");
-      glow.addColorStop(1, "rgba(232,121,82,0)");
-      ctx.fillStyle = glow;
-      ctx.fillRect(0, 0, w, h);
-
-      // Ping rings
-      for (let r = 1; r <= 3; r++) {
-        ctx.beginPath(); ctx.arc(cx, cy, 8+r*14, 0, Math.PI*2);
-        ctx.strokeStyle = `rgba(232,121,82,${0.3 - r*0.08})`;
-        ctx.lineWidth = 1.5; ctx.stroke();
-      }
-
-      // Center dot
-      ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fillStyle = "#E87952"; ctx.fill();
-      ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fillStyle = "#fff"; ctx.fill();
-
-      // Coordinates
-      ctx.fillStyle = "rgba(255,255,255,0.25)";
-      ctx.font = '10px "JetBrains Mono", monospace';
-      if (lat != null && lng != null) {
-        ctx.fillText(`${lat.toFixed(4)}°N`, 12, h - 28);
-        ctx.fillText(`${Math.abs(lng).toFixed(4)}°${lng < 0 ? "W" : "E"}`, 12, h - 14);
-      }
+    // ── Map ──
+    // Uses OpenStreetMap tiles via an iframe embed — dark-styled with CSS filters
+    function buildMapHtml(lat, lng, city, zoom) {
+      zoom = zoom || 10;
+      // Use OpenStreetMap embed
+      const src = `https://www.openstreetmap.org/export/embed.html?bbox=${lng-0.8}%2C${lat-0.4}%2C${lng+0.8}%2C${lat+0.4}&layer=mapnik&marker=${lat}%2C${lng}`;
+      return `
+        <div class="card__map">
+          <iframe src="${src}" loading="lazy"></iframe>
+          <div class="card__map-overlay"></div>
+          <div class="card__map-pin"></div>
+          <div class="card__map-label">${city}</div>
+        </div>`;
     }
 
     // ── Render ──
@@ -436,10 +435,7 @@
         </div>
 
         <div class="card">
-          <div class="card__map">
-            <canvas id="mapCanvas" width="400" height="220"></canvas>
-            <div class="card__map-label">${currentCity}</div>
-          </div>
+          ${buildMapHtml(currentLat, currentLng, currentCity)}
           <div class="card__body">
             <div class="live">
               <div class="live__dot ${isHome ? 'live__dot--home' : 'live__dot--away'}"></div>
@@ -460,10 +456,6 @@
           <div class="footer__text">Auto-synced from calendar</div>
           <div class="footer__text footer__time">Updated ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</div>
         </div>`;
-
-      // Draw map
-      const canvas = document.getElementById("mapCanvas");
-      if (canvas) drawMap(canvas, currentLat, currentLng, currentCity);
     }
 
     function renderError(err) {
