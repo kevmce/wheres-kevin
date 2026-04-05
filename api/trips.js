@@ -488,6 +488,7 @@ const CITY_COORDS = {
 };
 
 function getCoords(city) {
+  if (!city) return null;
   return CITY_COORDS[city.toLowerCase().trim()] || null;
 }
 
@@ -539,8 +540,8 @@ async function handler(req, res) {
     const legs = events.map(parseEvent).filter(Boolean);
     let trips = mergeLegsIntoTrips(legs, homeCity);
 
-    // Add coordinates
-    trips = trips.map((trip) => {
+    // Filter out any trips with no resolved destination, then add coordinates
+    trips = trips.filter(t => t.city).map((trip) => {
       const coords = getCoords(trip.city);
       return { ...trip, lat: coords?.lat || null, lng: coords?.lng || null };
     });
