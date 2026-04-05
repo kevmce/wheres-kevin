@@ -125,7 +125,9 @@ function extractOriginCityFromFlightyDesc(description) {
 
 // ── Parse a single calendar event into a travel leg ──
 function parseEvent(event) {
-  const title = event.summary || "";
+  // Strip zero-width characters (U+200B, U+200C, U+200D, U+FEFF) from title
+  // Flighty embeds zero-width spaces around the arrow: "DCA​→​LAX"
+  const title = (event.summary || "").replace(/[\u200B\u200C\u200D\uFEFF]/g, "");
   const location = event.location || "";
   const description = event.description || "";
   const start = event.start?.date || event.start?.dateTime?.split("T")[0];
@@ -138,10 +140,9 @@ function parseEvent(event) {
   let mode = "flight";
 
   // ── Flighty events ──
-  // Title format: "✈ JFK→SFO · AA 177" or "✈️ DCA→LAX · AA 123"
-  // The arrow can be → (U+2192), ➔, ➝, >, ->, or other variants
+  // Title format: "✈ DCA→LAX • AA 3283" (after stripping zero-width chars)
   // Match any 3-letter airport code pair separated by arrow-like characters
-  const flightyMatch = title.match(/([A-Z]{3})\s*[\u2192\u2794\u279D\u27A1→➔➝>]+\s*([A-Z]{3})/);
+  const flightyMatch = title.match(/([A-Z]{3})\s*[\u2192\u2794\u279D\u27A1→➔➝\->]+\s*([A-Z]{3})/);
 
   // Detect Flighty events by: has airport codes in title + either has description keywords
   // OR location contains "Intl" / "Airport" / "National" (Flighty puts departure airport in location)
@@ -325,9 +326,13 @@ function mergeLegsIntoTrips(legs, homeCity) {
     const tripLegs = [leg];
     let j = i + 1;
 
-    // Keep adding legs that are part of the same trip
-    // (within 2 days of the previous leg ending, and we haven't returned home yet)
-    let returnedHome = isReturningHome;
+    // Track whether we've been to a non-home destination yet
+    let hasLeftHome = !isHomeCity(leg.city, homeVariants) ||
+      (leg._legType === "flighty" && !isHomeCity(leg.city, homeVariants));
+    let returnedHome = false;
+
+    // For Amtrak: the first leg from home is a DEPARTURE, not a return
+    // We only flag returnedHome when we see a home-city leg AFTER a non-home leg
 
     while (j < sorted.length && !returnedHome) {
       const nextLeg = sorted[j];
@@ -337,14 +342,21 @@ function mergeLegsIntoTrips(legs, homeCity) {
 
       if (daysBetween > 7) break; // Gap too large — separate trip
 
-      tripLegs.push(nextLeg);
-
-      // Check if this leg returns us home
-      const nextReturnsHome =
+      // Determine if this next leg is a home-city leg
+      const nextIsHome =
         (nextLeg._legType === "flighty" && isHomeCity(nextLeg.city, homeVariants)) ||
         (nextLeg._legType === "amtrak" && isHomeCity(nextLeg.city, homeVariants));
+      const nextIsAway =
+        (nextLeg._legType === "flighty" && !isHomeCity(nextLeg.city, homeVariants)) ||
+        (nextLeg._legType === "amtrak" && !isHomeCity(nextLeg.city, homeVariants)) ||
+        (nextLeg._legType === "manual");
 
-      if (nextReturnsHome) returnedHome = true;
+      if (nextIsAway) hasLeftHome = true;
+
+      tripLegs.push(nextLeg);
+
+      // Only flag return if we've been somewhere and now we see a home leg
+      if (nextIsHome && hasLeftHome) returnedHome = true;
 
       j++;
     }
