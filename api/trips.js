@@ -343,6 +343,11 @@ function mergeLegsIntoTrips(legs, homeCity) {
     } else if (!originIsHome && destIsHome) {
       // ── RETURNING HOME ──
       if (currentTrip) {
+        // If we had a pending departure with no destination, the return leg's
+        // origin city IS the destination (e.g., Amtrak departing from NYC = we were in NYC)
+        if (currentTrip._pendingDeparture && !currentTrip.city && legOrigin && legOrigin !== "home") {
+          currentTrip.city = legOrigin;
+        }
         // Close the trip at this leg's departure (you leave the destination now)
         currentTrip.end = leg.start;
         result.push({ ...currentTrip });
@@ -351,13 +356,18 @@ function mergeLegsIntoTrips(legs, homeCity) {
 
     } else if (!originIsHome && !destIsHome && legDest) {
       // ── CITY-TO-CITY (e.g., NYC → SFO) ──
-      if (currentTrip && currentTrip.city) {
+      if (currentTrip && currentTrip._pendingDeparture && !currentTrip.city && legOrigin) {
+        // Resolve the pending departure: we were in the origin city
+        currentTrip.city = legOrigin;
+        currentTrip.end = leg.start;
+        currentTrip.mode = currentTrip.mode; // keep train mode from departure
+        result.push({ ...currentTrip });
+      } else if (currentTrip && currentTrip.city) {
         // Close the current segment at this leg's departure
         currentTrip.end = leg.start;
         result.push({ ...currentTrip });
       }
       // Open new segment for the new destination
-      const startDate = (currentTrip && currentTrip._pendingDeparture) ? currentTrip.start : leg.start;
       currentTrip = {
         city: legDest,
         start: leg.start,
