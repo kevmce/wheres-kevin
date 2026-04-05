@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Where's Kevin?</title>
+  <title>Where the hell is Kevin?</title>
   <meta name="description" content="Kevin's live travel status — see where he is right now." />
-  <meta property="og:title" content="Where's Kevin?" />
+  <meta property="og:title" content="Where the hell is Kevin?" />
   <meta property="og:description" content="Live travel status — see where Kevin is right now." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=JetBrains+Mono:wght@300;400&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet" />
@@ -72,7 +72,7 @@
     .header__label {
       font-size: 11px;
       font-family: var(--mono);
-      color: var(--text-faint);
+      color: rgba(255,255,255,0.45);
       letter-spacing: 0.15em;
       text-transform: uppercase;
       margin-bottom: 8px;
@@ -302,7 +302,7 @@
     <!-- Loading state -->
     <div class="header">
       <div class="header__label">Live Location</div>
-      <h1 class="header__title">Where's Kevin<span class="accent">?</span></h1>
+      <h1 class="header__title">Where the hell is Kevin<span class="accent">?</span></h1>
     </div>
     <div class="card">
       <div style="padding: 24px;">
@@ -433,7 +433,7 @@
       document.getElementById("app").innerHTML = `
         <div class="header">
           <div class="header__label">Live Location</div>
-          <h1 class="header__title">Where's Kevin<span class="accent">?</span></h1>
+          <h1 class="header__title">Where the hell is Kevin<span class="accent">?</span></h1>
         </div>
 
         <div class="card">
@@ -464,7 +464,7 @@
       document.getElementById("app").innerHTML = `
         <div class="header">
           <div class="header__label">Live Location</div>
-          <h1 class="header__title">Where's Kevin<span class="accent">?</span></h1>
+          <h1 class="header__title">Where the hell is Kevin<span class="accent">?</span></h1>
         </div>
         <div class="error-msg">
           Couldn't load travel data. The calendar sync may need to be reconfigured.
