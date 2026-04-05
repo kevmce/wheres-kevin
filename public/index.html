@@ -393,14 +393,16 @@
       const now = new Date();
       const upcoming = trips
         .filter(t => new Date(t.start + "T00:00:00") > now)
-        .sort((a, b) => new Date(a.start) - new Date(b.start));
+        .sort((a, b) => new Date(a.start) - new Date(b.start))
+        .slice(0, 5);
 
-      // Status message
+      // Status message — use non-breaking space in city names to prevent line breaks
+      const nbsp = (str) => str.replace(/\s/g, '\u00A0');
       let statusHtml = "";
       if (status.type === "home_until") {
-        statusHtml = `Kevin is home until <span class="hl">${formatDate(status.nextTrip.start)}</span>, then heading to <span class="city-hl">${status.nextTrip.city}</span>.`;
+        statusHtml = `Kevin is home until <span class="hl">${formatDate(status.nextTrip.start)}</span>, then heading to <span class="city-hl">${nbsp(status.nextTrip.city)}</span>.`;
       } else if (status.type === "current") {
-        statusHtml = `Kevin is in <span class="city-hl">${status.trip.city}</span> until <span class="hl">${formatDate(status.trip.end)}</span>.`;
+        statusHtml = `Kevin is in <span class="city-hl">${nbsp(status.trip.city)}</span> until <span class="hl">${formatDate(status.trip.end)}</span>.`;
       } else {
         statusHtml = `Kevin is home. No upcoming trips scheduled.`;
       }

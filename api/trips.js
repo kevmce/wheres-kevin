@@ -267,179 +267,140 @@ function isHomeCity(city, homeVariants) {
 /**
  * ── Unified trip merger ──
  *
- * Takes all parsed legs (flights, trains, manual) and merges them into trips.
+ * State machine approach:
+ *   - Walk through legs chronologically
+ *   - Track current state: "home" or "away in [city]"
+ *   - Each leg transitions the state
+ *   - When state changes from one away-city to another, close the old segment
+ *   - When state returns to home, close the segment
  *
- * Logic:
- *   1. Process legs chronologically
- *   2. A "trip" starts when you leave home and ends when you return
- *   3. Consecutive legs within 1 day of each other are part of the same trip
- *   4. For Amtrak: paired legs get merged (non-home city = destination)
- *   5. For Flighty: we know origin + destination cities from the description
- *   6. The "current city" of a trip is the last non-home destination
- *
- * Example: Train DC→NYC (May 8), Fly NYC→SFO (May 10), Fly SFO→DCA (May 14)
- *   → Trip 1: "New York" May 8 – May 10 (train)
- *   → Trip 2: "San Francisco" May 10 – May 14 (flight)
- *
- * But we actually want to show this as segments within one trip. The key insight:
- * a trip is "you're away from home." So we group everything from departure to return.
+ * For Flighty: destination is in `city`, origin in `originCity`
+ * For Amtrak: `city` is the station address (departure point)
+ *   - If city = home → this is a departure FROM home (outbound)
+ *   - If city ≠ home → this is a departure FROM destination (return)
  */
 function mergeLegsIntoTrips(legs, homeCity) {
   const homeVariants = buildHomeCityVariants(homeCity);
   const result = [];
 
-  // Sort by start date
   const sorted = [...legs].sort((a, b) => a.start.localeCompare(b.start));
 
-  let i = 0;
-  while (i < sorted.length) {
-    const leg = sorted[i];
+  let currentTrip = null; // { city, start, end, mode }
 
-    // For Amtrak legs: the city is the station address city (departure point)
-    // For Flighty legs: we have both origin and destination
-    // For manual legs: city is the destination
-
-    // Is this a departure from home?
-    const isLeavingHome =
-      (leg._legType === "flighty" && isHomeCity(leg.originCity, homeVariants)) ||
-      (leg._legType === "amtrak" && isHomeCity(leg.city, homeVariants)) ||
-      (leg._legType === "manual" && !isHomeCity(leg.city, homeVariants));
-
-    // Is this a return to home?
-    const isReturningHome =
-      (leg._legType === "flighty" && isHomeCity(leg.city, homeVariants)) ||
-      (leg._legType === "amtrak" && isHomeCity(leg.city, homeVariants));
-
-    // Determine the destination city for this leg
-    let destCity = null;
-    let destMode = leg.mode;
+  for (const leg of sorted) {
+    let legOrigin = null; // Where this leg departs FROM
+    let legDest = null;   // Where this leg arrives AT
 
     if (leg._legType === "flighty") {
-      destCity = isHomeCity(leg.city, homeVariants) ? null : leg.city;
+      legOrigin = leg.originCity;
+      legDest = leg.city;
     } else if (leg._legType === "amtrak") {
-      destCity = isHomeCity(leg.city, homeVariants) ? null : leg.city;
-    } else {
-      destCity = leg.city;
-    }
-
-    // Try to build a complete trip by collecting consecutive legs
-    const tripLegs = [leg];
-    let j = i + 1;
-
-    // Track whether we've been to a non-home destination yet
-    let hasLeftHome = !isHomeCity(leg.city, homeVariants) ||
-      (leg._legType === "flighty" && !isHomeCity(leg.city, homeVariants));
-    let returnedHome = false;
-
-    // For Amtrak: the first leg from home is a DEPARTURE, not a return
-    // We only flag returnedHome when we see a home-city leg AFTER a non-home leg
-
-    while (j < sorted.length && !returnedHome) {
-      const nextLeg = sorted[j];
-      const prevEnd = new Date(tripLegs[tripLegs.length - 1].end + "T00:00:00");
-      const nextStart = new Date(nextLeg.start + "T00:00:00");
-      const daysBetween = (nextStart - prevEnd) / (1000 * 60 * 60 * 24);
-
-      if (daysBetween > 7) break; // Gap too large — separate trip
-
-      // Determine if this next leg is a home-city leg
-      const nextIsHome =
-        (nextLeg._legType === "flighty" && isHomeCity(nextLeg.city, homeVariants)) ||
-        (nextLeg._legType === "amtrak" && isHomeCity(nextLeg.city, homeVariants));
-      const nextIsAway =
-        (nextLeg._legType === "flighty" && !isHomeCity(nextLeg.city, homeVariants)) ||
-        (nextLeg._legType === "amtrak" && !isHomeCity(nextLeg.city, homeVariants)) ||
-        (nextLeg._legType === "manual");
-
-      if (nextIsAway) hasLeftHome = true;
-
-      tripLegs.push(nextLeg);
-
-      // Only flag return if we've been somewhere and now we see a home leg
-      if (nextIsHome && hasLeftHome) returnedHome = true;
-
-      j++;
-    }
-
-    // Now extract the distinct destination segments from the collected legs
-    const segments = [];
-    let currentDest = null;
-    let pendingDepartureDate = null; // Track when we left home
-
-    for (const tl of tripLegs) {
-      let tlDest = null;
-      let tlMode = tl.mode;
-
-      if (tl._legType === "flighty") {
-        tlDest = isHomeCity(tl.city, homeVariants) ? null : tl.city;
-      } else if (tl._legType === "amtrak") {
-        tlDest = isHomeCity(tl.city, homeVariants) ? null : tl.city;
+      // Amtrak city = station address = departure point
+      // If departing from home → going somewhere (we don't know dest yet from this leg alone)
+      // If departing from non-home → returning home
+      if (isHomeCity(leg.city, homeVariants)) {
+        legOrigin = "home";
+        legDest = null; // Unknown until we see the next leg
       } else {
-        tlDest = tl.city;
+        legOrigin = leg.city;
+        legDest = "home";
+      }
+    } else {
+      // Manual entries: city is the destination
+      legDest = leg.city;
+    }
+
+    const originIsHome = legOrigin === "home" || isHomeCity(legOrigin, homeVariants);
+    const destIsHome = legDest === "home" || isHomeCity(legDest, homeVariants);
+
+    if (originIsHome && !destIsHome && legDest) {
+      // ── LEAVING HOME for a known destination ──
+      if (currentTrip) {
+        // Close any open trip (shouldn't normally happen)
+        result.push({ ...currentTrip });
+      }
+      currentTrip = {
+        city: legDest,
+        start: leg.start,
+        end: leg.end,
+        mode: leg.mode,
+      };
+
+    } else if (originIsHome && !legDest) {
+      // ── LEAVING HOME, destination unknown (Amtrak outbound) ──
+      // Remember the departure date; the destination will come from the next non-home leg
+      if (currentTrip) {
+        result.push({ ...currentTrip });
+      }
+      currentTrip = {
+        city: null, // Will be filled by next leg
+        start: leg.start,
+        end: leg.end,
+        mode: leg.mode,
+        _pendingDeparture: true,
+      };
+
+    } else if (!originIsHome && destIsHome) {
+      // ── RETURNING HOME ──
+      if (currentTrip) {
+        // Close the trip at this leg's departure (you leave the destination now)
+        currentTrip.end = leg.start;
+        result.push({ ...currentTrip });
+        currentTrip = null;
       }
 
-      if (!tlDest && !currentDest) {
-        // Departing from home — remember the departure date
-        pendingDepartureDate = tl.start;
-      } else if (tlDest && tlDest !== currentDest) {
-        // Arriving at a new destination
-        if (currentDest && segments.length > 0) {
-          // Close the previous segment at this leg's start
-          segments[segments.length - 1].end = tl.start;
-        }
-        // Open a new segment — start from when we departed (or this leg's start)
-        const segStart = pendingDepartureDate || tl.start;
-        currentDest = tlDest;
-        pendingDepartureDate = null;
-        segments.push({
-          city: tlDest,
-          start: segStart,
-          end: tl.end, // will be updated by subsequent legs
-          mode: tlMode,
-        });
-      } else if (!tlDest && currentDest) {
-        // Returning home — close the current segment at this leg's start
-        // (you're "in" the destination until you board the return)
-        segments[segments.length - 1].end = tl.start;
-        currentDest = null;
-        pendingDepartureDate = null;
+    } else if (!originIsHome && !destIsHome && legDest) {
+      // ── CITY-TO-CITY (e.g., NYC → SFO) ──
+      if (currentTrip && currentTrip.city) {
+        // Close the current segment at this leg's departure
+        currentTrip.end = leg.start;
+        result.push({ ...currentTrip });
       }
-      // If tlDest === currentDest, we're still at the same destination — no action
-    }
+      // Open new segment for the new destination
+      const startDate = (currentTrip && currentTrip._pendingDeparture) ? currentTrip.start : leg.start;
+      currentTrip = {
+        city: legDest,
+        start: leg.start,
+        end: leg.end,
+        mode: leg.mode,
+      };
 
-    // If only home legs (e.g., single Amtrak leg from home), skip
-    if (segments.length === 0) {
-      i = j;
-      continue;
-    }
+    } else if (!destIsHome && legDest && currentTrip && currentTrip._pendingDeparture) {
+      // ── Amtrak: the previous leg was an outbound from home, now we know the destination ──
+      // This case is handled above in city-to-city, but just in case:
+      currentTrip.city = legDest;
+      currentTrip.end = leg.end;
+      currentTrip.mode = leg.mode;
 
-    // Finalize segment end dates
-    // If the last segment doesn't have a return leg, use its own end date
-    // or the last leg's end date
-    if (segments.length > 0) {
-      const lastLeg = tripLegs[tripLegs.length - 1];
-      const lastSeg = segments[segments.length - 1];
-      if (new Date(lastLeg.end) > new Date(lastSeg.end)) {
-        lastSeg.end = lastLeg.end;
+    } else if (leg._legType === "amtrak" && !isHomeCity(leg.city, homeVariants)) {
+      // ── Amtrak departing from non-home city (return leg) ──
+      // If we have a pending departure with no destination, this leg's city IS the destination
+      if (currentTrip && currentTrip._pendingDeparture && !currentTrip.city) {
+        currentTrip.city = leg.city;
+        currentTrip.end = leg.start; // Trip ends when we board the return
+        result.push({ ...currentTrip });
+        currentTrip = null;
+      } else if (currentTrip) {
+        currentTrip.end = leg.start;
+        result.push({ ...currentTrip });
+        currentTrip = null;
       }
     }
-
-    // Add each segment as a separate trip for display
-    for (const seg of segments) {
-      result.push({
-        id: tripLegs[0].id + "_" + seg.city,
-        city: seg.city,
-        region: "",
-        start: seg.start,
-        end: seg.end,
-        mode: seg.mode,
-      });
-    }
-
-    i = j;
   }
 
-  return result;
+  // Close any remaining open trip
+  if (currentTrip) {
+    // Only add if we have a destination
+    if (currentTrip.city) {
+      result.push({ ...currentTrip });
+    }
+  }
+
+  // Clean up internal flags
+  return result.map(t => {
+    const { _pendingDeparture, ...clean } = t;
+    return clean;
+  });
 }
 
 // ── City coordinates ──
