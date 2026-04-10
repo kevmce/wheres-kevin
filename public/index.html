@@ -354,13 +354,26 @@
 
     function getCurrentStatus(trips, home) {
       const today = new Date(); today.setHours(0,0,0,0);
-      for (const trip of trips) {
+
+      // Check if today is a return day (the end date of a trip)
+      const sortedTrips = [...trips].sort((a, b) => a.start.localeCompare(b.start));
+      for (const trip of sortedTrips) {
+        const e = new Date(trip.end + "T00:00:00");
+        if (today.getTime() === e.getTime()) {
+          // Find the next trip after this one
+          const nextTrip = sortedTrips.find(t => new Date(t.start + "T00:00:00") > today);
+          return { type: "returning", trip, nextTrip: nextTrip || null };
+        }
+      }
+
+      // Check if currently on a trip
+      for (const trip of sortedTrips) {
         const s = new Date(trip.start + "T00:00:00");
         const e = new Date(trip.end + "T00:00:00");
         if (today >= s && today < e) return { type: "current", trip };
       }
-      const upcoming = trips.filter(t => new Date(t.start + "T00:00:00") > today)
-        .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+      const upcoming = sortedTrips.filter(t => new Date(t.start + "T00:00:00") > today);
       if (upcoming.length > 0) return { type: "home_until", nextTrip: upcoming[0] };
       return { type: "home" };
     }
@@ -385,10 +398,11 @@
       const { home, trips } = data;
       const status = getCurrentStatus(trips, home);
       const isHome = status.type === "home" || status.type === "home_until";
-      const currentCity = isHome ? home.city : status.trip?.city || home.city;
-      const currentRegion = isHome ? home.region : (status.trip?.region || "");
-      const currentLat = isHome ? home.lat : (status.trip?.lat || home.lat);
-      const currentLng = isHome ? home.lng : (status.trip?.lng || home.lng);
+      const isReturning = status.type === "returning";
+      const currentCity = (isHome && !isReturning) ? home.city : (status.trip?.city || home.city);
+      const currentRegion = (isHome && !isReturning) ? home.region : (status.trip?.region || "");
+      const currentLat = (isHome && !isReturning) ? home.lat : (status.trip?.lat || home.lat);
+      const currentLng = (isHome && !isReturning) ? home.lng : (status.trip?.lng || home.lng);
 
       const now = new Date();
       const upcoming = trips
@@ -402,8 +416,23 @@
         const days = daysUntil(status.nextTrip.start);
         const dayText = days === 1 ? "1 more day" : `${days} more days`;
         statusHtml = `Kevin is home for <span class="hl">${dayText}</span> until <span class="hl">${formatDate(status.nextTrip.start)}</span>, then heading to <span class="city-hl">${nbsp(status.nextTrip.city)}</span>.`;
+      } else if (status.type === "returning") {
+        if (status.nextTrip) {
+          const days = daysUntil(status.nextTrip.start);
+          const dayText = days === 1 ? "1 more day" : `${days} more days`;
+          statusHtml = `Kevin is traveling home from <span class="city-hl">${nbsp(status.trip.city)}</span> today, and will be home for <span class="hl">${dayText}</span> until <span class="hl">${formatDate(status.nextTrip.start)}</span>.`;
+        } else {
+          statusHtml = `Kevin is traveling home from <span class="city-hl">${nbsp(status.trip.city)}</span> today.`;
+        }
       } else if (status.type === "current") {
-        statusHtml = `Kevin is in <span class="city-hl">${nbsp(status.trip.city)}</span> until <span class="hl">${formatDate(status.trip.end)}</span>.`;
+        const today = new Date(); today.setHours(0,0,0,0);
+        const tripStart = new Date(status.trip.start + "T00:00:00");
+        const isFirstDay = today.getTime() === tripStart.getTime();
+        if (isFirstDay) {
+          statusHtml = `Kevin is traveling to <span class="city-hl">${nbsp(status.trip.city)}</span> today and will be there until <span class="hl">${formatDate(status.trip.end)}</span>.`;
+        } else {
+          statusHtml = `Kevin is in <span class="city-hl">${nbsp(status.trip.city)}</span> until <span class="hl">${formatDate(status.trip.end)}</span>.`;
+        }
       } else {
         statusHtml = `Kevin is home. No upcoming trips scheduled.`;
       }
@@ -441,8 +470,8 @@
           ${buildMapHtml(currentLat, currentLng, currentCity)}
           <div class="card__body">
             <div class="live">
-              <div class="live__dot ${isHome ? 'live__dot--home' : 'live__dot--away'}"></div>
-              <span class="live__label ${isHome ? 'live__label--home' : 'live__label--away'}">${isHome ? "Home Base" : "Traveling"}</span>
+              <div class="live__dot ${(isHome && !isReturning) ? 'live__dot--home' : 'live__dot--away'}"></div>
+              <span class="live__label ${(isHome && !isReturning) ? 'live__label--home' : 'live__label--away'}">${isReturning ? "Traveling Home" : (isHome ? "Home Base" : "Traveling")}</span>
             </div>
             <div class="city-row">
               <span>${ICONS.pin}</span>
