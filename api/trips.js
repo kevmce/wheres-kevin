@@ -521,7 +521,7 @@ async function handler(req, res) {
 
     const now = new Date();
     const timeMin = new Date(now); timeMin.setDate(timeMin.getDate() - 30);
-    const timeMax = new Date(now); timeMax.setDate(timeMax.getDate() + 90);
+    const timeMax = new Date(now); timeMax.setDate(timeMax.getDate() + 365);
 
     const response = await calendar.events.list({
       calendarId: process.env.GOOGLE_CALENDAR_ID,

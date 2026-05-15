@@ -354,16 +354,22 @@
 
     function getCurrentStatus(trips, home) {
       const today = new Date(); today.setHours(0,0,0,0);
-
-      // Check if today is a return day (the end date of a trip)
       const sortedTrips = [...trips].sort((a, b) => a.start.localeCompare(b.start));
-      for (const trip of sortedTrips) {
-        const e = new Date(trip.end + "T00:00:00");
-        if (today.getTime() === e.getTime()) {
-          // Find the next trip after this one
-          const nextTrip = sortedTrips.find(t => new Date(t.start + "T00:00:00") > today);
-          return { type: "returning", trip, nextTrip: nextTrip || null };
-        }
+
+      // Check if today is a transition day (end of one trip, start of another)
+      // This must be checked BEFORE the return-home check
+      const endingTrip = sortedTrips.find(t => new Date(t.end + "T00:00:00").getTime() === today.getTime());
+      const startingTrip = sortedTrips.find(t => new Date(t.start + "T00:00:00").getTime() === today.getTime());
+
+      if (endingTrip && startingTrip && endingTrip !== startingTrip) {
+        // Back-to-back trips — show as traveling to the NEW destination
+        return { type: "current", trip: startingTrip };
+      }
+
+      // Check if today is a return day (the end date of a trip, no new trip starting)
+      if (endingTrip) {
+        const nextTrip = sortedTrips.find(t => new Date(t.start + "T00:00:00") > today);
+        return { type: "returning", trip: endingTrip, nextTrip: nextTrip || null };
       }
 
       // Check if currently on a trip
